@@ -1,4 +1,1 @@
-Locker
-======
-
-File Read API
+Locker- A file Read API interface. Currently in Alpha, more to come soon
