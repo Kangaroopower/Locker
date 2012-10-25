@@ -92,6 +92,8 @@
 		return reader.readAsArrayBuffer(file);
 	};
 
+	Locker.slice = Locker.readBlob; //alias for readBlob
+
 	Locker.monitor = function (e, start, progress, abortel) {
 		var file = Locker.fileSelect(e).obj, reader = new FileReader();
 		reader.onerror = function (evt) {
