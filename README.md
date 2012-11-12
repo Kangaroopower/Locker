@@ -1,1 +1,1 @@
-Locker- A file Read API interface. Currently in Alpha, more to come soon
+Locker- A Library for storing and managing data.

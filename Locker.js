@@ -1,134 +1,139 @@
-//Locker- File API library
-//CURENTLY IN ALPHA
-(function	(window, undefined) {
-	//define some variables
-	var document = window.document,
-		Locker = {
-			version: '1.0 Mockingjay'
-		};
-
-	Locker.fileSelect = function (e) {
-		var files = e.target.files;
-		for (var i = 0, f; f = files[i]; i++) {
-			return {
-				'name': escape(f.name),
-				'type': f.type,
-				'size': f.size,
-				'lastmodified': f.lastModifiedDate,
-				'obj': f
-
-			};
-		}
-		return false;
-	};
-
-	var handleDrag = function (e) {
-		e.stopPropagation();
-		e.preventDefault();
-		e.dataTransfer.dropEffect = 'copy';
-	};
-
-	Locker.drag = function (dropZone, ondrop) {
-		dropZone.addEventListener('dragover', handleDrag, false);
-		dropZone.addEventListener('drop', ondrop, false);
-	};
-
-	Locker.image = function (e) {
-		var f = Locker.fileSelect(e).obj;
-		if (!f.type.match('image.*')) {
-			return false;
+(function (w) {
+	/*** BASIC STORAGE ***/
+	var rPrefix = /^__locker__/;
+	var store = Locker = function(key) {
+		var type = store.type.name;
+		if (w[type] == undefined) {
+			checkNext(key, value, type.prio)
 		}
 
-		var reader = new FileReader();
-		reader.readAsDataURL(f);
-		reader.onload = (function(theFile) {
-			return {
-				'file': theFile,
-				'name': escape(theFile.name)
-			};
-		})(f);
-	};
-
-	Locker.readBlob = function (el, start, stop) {
-		var files = document.querySelector(el).files;
-		if (!files.length) {
-			alert('Please select a file!');
-			return;
-		}
-
-		var file = files[0], reader = new FileReader();
-		start = parseInt(start) || 0;
-		stop = parseInt(stop) || file.size - 1;
-
-		reader.onloadend = function(e) {
-			if (e.target.readyState === FileReader.DONE) {
-				return {
-					'content': reader.readAsBinaryString(file.slice(start, stop + 1)),
-					'start': start + 1,
-					'end': stop + 1,
-					'size': file.size
-				};
+		var act {
+			store: function (value) {
+				return store.types[type].value(key, value);
+			},
+			get: function () {
+				return store.types[type].value(key, null, 'get');
+			},
+			remove: function () {
+				return store.types[type].value(key, null, 'remove');
+			},
+			removeAll: function (onlyprefixed) {
+				var name;
+				if (onlyprefixed === true) {
+					for (name in w.localStorage) {
+						if (-1 !== name.indexOf(rPrefix))
+							store.types[type].value(name , null, 'remove');
+						}
+					}
+				} else {
+					for (name in w.localStorage) {
+						store.types[type].value(name , null, 'remove');
+					}
+				}
+			},
+			storeObj: function (value) {
+				if (typeof JSON != undefined && JSON.stringify) {
+					return store.types[type].value(key, JSON.stringify(value));
+				} else {
+					return false;
+				}
+			},
+			getObj: function () {
+				if (typeof JSON != undefined && JSON.parse) {
+					return JSON.parse(store.types[type].value(key, null, 'get'));
+				} else {
+					return false;
+				}
 			}
 		};
+		return store.types[type].value(key, value);
 	};
 
-	Locker.readBinary = function (file) {
-		var reader = new FileReader();
-		return reader.readAsBinaryString(file);
-	};
-
-	Locker.readDataURL = function (file) {
-		var reader = new FileReader();
-		return reader.readAsDataURL(file);
-	};
-
-	Locker.readText = function (file) {
-		var reader = new FileReader();
-		return reader.readAsText(file);
-	};
-
-	Locker.readBuffer = function (file) {
-		var reader = new FileReader();
-		return reader.readAsArrayBuffer(file);
-	};
-
-	Locker.slice = Locker.readBlob; //alias for readBlob
-
-	Locker.monitor = function (e, start, progress, abortel) {
-		var file = Locker.fileSelect(e).obj, reader = new FileReader();
-		reader.onerror = function (evt) {
-			switch(evt.target.error.code) {
-				case evt.target.error.NOT_FOUND_ERR:
-					alert('File Not Found!');
-					break;
-				case evt.target.error.NOT_READABLE_ERR:
-					alert('File is not readable');
-					break;
-				case evt.target.error.ABORT_ERR:
-					break; // noop
-				default:
-					alert('An error occurred reading this file.');
+	store.types = {};
+	store.type = {
+		name: null,
+		prio: -1
+	}
+	store.addType = function(type, storage, priority) {
+		if (!store.type.name || priority > store.type.prio) {
+			store.type = {
+				type: type,
+				prio: priority
 			}
-		};
-		reader.onprogress = function(e) {
-			eval('progress(e);');
-		};
-		reader.onabort = function(e) {
-			alert('File read cancelled');
-		};
-		reader.onloadstart = function (e) {
-			eval('start(e);');
-		};
-		reader.onload = function (e) {
-			eval('ondone(e);');
-		};
+		}
 
-		document.getElementById(abortel).onclick = reader.abort();
-
-		// Read in the image file as a binary string.
-		reader.readAsBinaryString(file[0]);
+		store.types[type] = {
+			value: storage,
+			prio: priority
+		} 
+		store[type] = function(key, value) {
+			return store(key, value, type);
+		};
 	};
 
-	window.Locker = Locker;
+	function checkNext (key, value, prio) {
+		for (var i in store.types) {
+			var down = prio--;
+			if (store.types[i].prio === down) {
+				store(key, value, store.types[i].name);
+			}
+		}
+	}
 
-})(window, undefined);
+	function createStorageType(storageType, storage, prio) {
+		store.addType(storageType, function(key, value, type) {
+			var ret = value;
+
+			// protect against name collisions with direct storage
+			key = "__locker__" + key;
+
+			if (type === 'get') {
+				return storage.getItem(key);
+			} else if (type === 'remove') {
+				storage.removeItem(key);
+			} else {
+				try {
+					storage.setItem(key, value);
+					// quota exceeded
+				} catch(error) {
+					// expire old data and try again
+					store[storageType]();
+					try {
+						storage.setItem(key, value);
+					} catch(error) {
+						throw "locker store quota exceeded";
+					}
+				}
+			}
+
+			return ret;
+		}, prio);
+	}
+
+	// localStorage + sessionStorage- present on all modern browsers
+	for (var type in { 'localStorage': 1, 'sessionStorage': 1 }) {
+		// try/catch for file protocol in Firefox and Private Browsing in Safari 5
+		try {
+			// Safari 5 in Private Browsing exposes localStorage but doesn't allow storing data
+			// so we attempt storing and removing items
+			var randnum = Math.Random();
+			w[type].setItem("__locker"+ randnum +"__", "x");
+			w[type].removeItem("__locker"+ randnum +"__");
+			createStorageType(webStorageType, w[webStorageType], 1);
+		} catch(e) {}
+	}
+
+	// globalStorage- non-standard: Firefox 2+
+	if (!store.types.localStorage && w.globalStorage) {
+		// try/catch for file protocol in Firefox
+		try {
+			createStorageType("globalStorage", w.globalStorage[w.location.hostname], 1);
+			// Default to globalStorage in Firefox 2.0 and 3.0
+			if (store.type === "sessionStorage") {
+				store.type = "globalStorage";
+			}
+		} catch(e) {}
+	}
+
+	w.Locker = Locker
+})(window);
