@@ -1,6 +1,5 @@
 // mapper should return an array of [{key:'somekey', value:'somevalue'}]
 // reducer should return a single {key:'somekey', value:'somevalue'}
-function isArray 
 function mapReduce(i, mapper, reducer, property) {
 	var intermediate = [], output = [], value, groups, values;
  
