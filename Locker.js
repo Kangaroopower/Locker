@@ -140,7 +140,7 @@
 
 	/*** LOCKER SORTING FUNCTIONS ***/
 
-	//Compares two numbers to see which one's larger 
+	//Compares two numbers to see which one is larger 
 	function compare(a, b) {
 		if (a > b) {
 			return 1;
