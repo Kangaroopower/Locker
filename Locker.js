@@ -204,7 +204,7 @@
 	}
 
 	// expose public members
-	ns.compare = comparator;
+	ns.compare = compare;
 	ns.sort = mergeSort;
 	ns.randomArray = randomArray;
 })(window, window.Locker = window.Locker || {version: '1.0 Alpha'});
