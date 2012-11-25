@@ -7,7 +7,7 @@
 	ns.store = function(key, info) {
 		var type = store.type.name;
 		if (type == null) {
-			checkNext(key, info, type.prio);
+			checkNext(key, info, 1);
 		}
 
 		var act = {
