@@ -3,47 +3,47 @@
 	/*** LOCKER STORAGE FUNCTIONS ***/
 
 	/** Storage type creation functions **/
-	var rPrefix = /^__locker__/, store = {};
-	ns.store = function(key, info) {
-		var type = store.type.name;
-		if (type == null) {
-			checkNext(key, info, 1);
+	var store = {};
+
+	ns.store = function(key, val, type) {
+		if (typeof type === "undefined") {
+			type = fallback();
 		}
 
 		var act = {
 			store: function () {
-				return store.types[type].value(key, info);
+				return store[type](key, val);
 			},
 			get: function () {
-				return store.types[type].value(key, null, 'get');
+				return store[type](key, null, 'get');
 			},
 			remove: function () {
-				return store.types[type].value(key, null, 'remove');
+				return store[type](key, null, 'remove');
 			},
 			removeAll: function (onlyprefixed) {
 				var name;
 				if (onlyprefixed === true) {
 					for (name in w.localStorage) {
-						if (-1 !== name.indexOf(rPrefix)) {
-							store.types[type].value(name , null, 'remove');
+						if (-1 !== name.indexOf(/^__locker__/)) {
+							store[type](name , null, 'remove');
 						}
 					}
 				} else {
 					for (name in w.localStorage) {
-						store.types[type].value(name , null, 'remove');
+						store[type](name , null, 'remove');
 					}
 				}
 			},
 			storeObj: function () {
-				if (typeof JSON != undefined && JSON.stringify) {
-					return store.types[type].value(key, JSON.stringify(info));
+				if (typeof JSON !== "function" && JSON.stringify) {
+					return store[type](key, JSON.stringify(val));
 				} else {
 					return false;
 				}
 			},
 			getObj: function () {
-				if (typeof JSON != undefined && JSON.parse) {
-					return JSON.parse(store.types[type].value(key, null, 'get'));
+				if (typeof JSON === "function" && JSON.parse) {
+					return JSON.parse(store[type](key, null, 'get'));
 				} else {
 					return false;
 				}
@@ -52,90 +52,173 @@
 		return act;
 	};
 
-	store.types = {};
-	store.type = {
-		name: null,
-		prio: -1
-	};
-	store.addType = function(type, storage, priority) {
-		if (!store.type.name || (priority && priority > store.type.prio)) {
-			store.type = {
-				type: type,
-				prio: priority
-			};
-		}
-
-		store.types[type] = {
-			value: storage,
-			prio: priority
-		};
-		store[type] = function(key, value) {
-			return ns.store(key, value, type);
-		};
+	store.addType = function(type, storage, prio) {
+		store[type] = storage;
+		store.prios[prio] = type;
 	};
 
-	function checkNext (key, value, prio) {
-		for (var i in store.types) {
-			if (store.types[i].prio === --prio) {
-				ns.store(key, value, store.types[i].name);
+	//Annoying helper function to see what version IE is
+	function IEVersion () {
+		var rv = false;
+		if (navigator.appName == 'Microsoft Internet Explorer') {
+			var ua = navigator.userAgent, re  = new RegExp("MSIE ([0-9]{1,}[\.0-9]{0,})");
+			if (re.exec(ua) != null) {
+				if(parseFloat( RegExp.$1 ) >= 5 && parseFloat( RegExp.$1 ) < 8) {
+					rv = true;
+				}
 			}
 		}
+		return rv;
 	}
 
+	//Creates the best storage type to use if none can be found
+	function fallback () {
+		var res;
+		for (var x in store.prios) {
+			if (store.prios[x] === 2) {
+				for (var i in store.prios[2]) {
+					if (typeof w[store.prios[2][i]] !== "undefined") {
+						res = store.prios[2][i];
+					}
+				}
+			} else if (store.prios[x] === 1) {
+				//Has to be hardcoded because userData isn't a global
+				if (IEVersion() === true) {
+					res = "userData";
+				} else if (typeof window["globalStorage"] !== "undefined") {
+					res = "globalStorage";
+				}
+			} else {
+				res = "memory";
+			}
+		}
+		return res;
+	}
+
+	//Easy interface for creating some storage types
 	function createStorageType(storageType, storage, prio) {
+		prio = prio ? prio : -1;
 		store.addType(storageType, function(key, value, type) {
 			var ret = value;
 
 			// protect against name collisions with direct storage
-			key = "__locker__" + key;
+			if (!key.test(/^__locker__/)) {
+				key = "__locker__" + key;
+			}
 
 			if (type === 'get') {
 				return storage.getItem(key);
 			} else if (type === 'remove') {
 				storage.removeItem(key);
+				return true;
 			} else {
-				try {
-					storage.setItem(key, value);
-					// quota exceeded
-				} catch(error) {
-					// expire old data and try again
-					store[storageType]();
-					try {
-						storage.setItem(key, value);
-					} catch(err) {
-						throw "locker store quota exceeded";
-					}
-				}
+				storage.setItem(key, value);
 			}
 
 			return ret;
 		}, prio);
 	}
 
-	// localStorage + sessionStorage- present on all modern browsers
-	for (var type in { 'localStorage': 1, 'sessionStorage': 1 }) {
-		// try/catch for file protocol in Firefox and Private Browsing in Safari 5
-		try {
-			// Safari 5 in Private Browsing exposes localStorage but doesn't allow storing data
-			// so we attempt storing and removing items
-			var randnum = Math.Random();
-			w[type].setItem("__locker"+ randnum +"__", "x");
-			w[type].removeItem("__locker"+ randnum +"__");
-			createStorageType(type, w[type], 1);
-		} catch(e) {}
-	}
+	(function (w, store) {
 
-	// globalStorage- non-standard: Firefox 2+
-	if (!store.types.localStorage && w.globalStorage) {
-		// try/catch for file protocol in Firefox
-		try {
-			createStorageType("globalStorage", w.globalStorage[w.location.hostname], 0);
-			// Default to globalStorage in Firefox 2.0 and 3.0
-			if (store.type === "sessionStorage") {
-				store.type = "globalStorage";
+		// localStorage + sessionStorage- present on all modern browsers
+		for (var type in { 'localStorage': 1, 'sessionStorage': 1 }) {
+			// try/catch for file protocol in Firefox and Private Browsing in Safari 5
+			try {
+				// Safari 5 in Private Browsing exposes localStorage but doesn't allow storing data
+				// so we attempt storing and removing items
+				var randnum = Math.Random();
+				w[type].setItem("__locker"+ randnum +"__", "x");
+				w[type].removeItem("__locker"+ randnum +"__");
+				if (type === "localStorage") {
+					createStorageType(type, w[type], 2);
+				} else {
+					createStorageType(type, w[type]);
+				}
+			} catch(e) {}
+		}
+
+		// globalStorage- non-standard: Firefox 2+
+		if (typeof w.localStorage === "undefined" && w.globalStorage) {
+			// try/catch for file protocol in Firefox
+			try {
+				createStorageType("globalStorage", w.globalStorage[w.location.hostname], 1);
+				// Default to globalStorage in Firefox 2.0 and 3.0
+				if (store.type === "sessionStorage") {
+					store.type = "globalStorage";
+				}
+			} catch(e) {}
+		}
+
+		//Don't use if localStorage exists
+		if (typeof w.localStorage !== "undefined") {
+
+			//Create an element to store userData with
+			var div = document.createElement( "div" ), attrKey = "locker";
+			div.style.display = "none";
+			document.getElementsByTagName( "head" )[ 0 ].appendChild( div );
+
+			// you can't feature detect userData so you need to load it and see if it breaks
+			try {
+				div.addBehavior( "#default#userdata" );
+				div.load( attrKey );
+			} catch( e ) {
+				div.parentNode.removeChild( div );
+				return;
 			}
-		} catch(e) {}
-	}
+
+			//It works, now let's create userdata
+			store.addType( "userData", function( key, value, type ) {
+				div.load( attrKey );
+				var attr, ret = value;
+
+				if ( !key ) {
+					var i = 0;
+					ret = {};
+					while ( attr = div.XMLDocument.documentElement.attributes[ i++ ] ) {
+						ret[ attr.name ] = attr.value;
+					}
+					div.save( attrKey );
+					return ret;
+				}
+
+				// convert invalid characters to dashes- http://www.w3.org/TR/REC-xml/#NT-Name
+				// and remove colon
+				key = key.replace( /[^\-._0-9A-Za-z\xb7\xc0-\xd6\xd8-\xf6\xf8-\u037d\u037f-\u1fff\u200c-\u200d\u203f\u2040\u2070-\u218f]/g, "-" );
+				key = key.replace( /^-/, "_-" );
+
+				//Create the API for storing, getting and removing data
+				if ( type === 'get' ) {
+					attr = div.getAttribute( key );
+					return attr;
+				} else if ( type === 'remove' ) {
+					div.removeAttribute( key );
+					return true;
+				} else {
+					div.setAttribute( key, value );
+				}
+
+				div.save( attrKey );
+				return ret;
+			}, 1);
+		}
+
+		store.addType( "memory", function( key, value, type ) {
+			var ret = value, memory = {};
+
+			if ( type === 'get' ) {
+				return memory[key];
+			} else if (type === 'remove') {
+				delete memory[ key ];
+				return true;
+			} else {
+				memory[key] = value;
+			}
+
+			return ret;
+		});
+
+	})(window, store);
 
 
 	/*** LOCKER SORTING FUNCTIONS ***/
@@ -203,8 +286,164 @@
 		return merge(mergeSort(left), mergeSort(right));
 	}
 
+	//Swap Helper function
+	function swap(items, firstIndex, secondIndex){
+		var temp = items[firstIndex];
+		items[firstIndex] = items[secondIndex];
+		items[secondIndex] = temp;
+	}
+ 
+	//Sorts an array with bubbleSort
+	function bubbleSort(input) {
+		for (var i = input.length; i > 0; i--){
+			for (var j = input.length-i; j >= 0; j--){
+				if (input[j] < input[j-1]){
+					swap(input, j, j-1);
+				}
+			}
+		}
+		
+		return input;
+	}
+
+	//Sort an array with quickSort
+	function partition (data, left, right) {
+
+		var pivot = data[Math.ceil((right + left) / 2)],  i = left, j = right;
+
+		while (i <= j) {
+
+			while (data[i] < pivot) {
+				i++;
+			}
+
+			while (data[j] > pivot) {
+				j--;
+			}
+
+			if (i <= j) {
+				swap(data, i, j);
+
+				// change indices to continue loop
+				i++;
+				j--;
+			}
+		}
+
+		// this value is necessary for recursion
+		return i;
+	}
+
+	function quickSort (data) {
+		if (data.length > 1) {
+			var index, left = 0, right = data.length -1;
+			
+			index = partition(data, left, right);
+
+			// if the returned index
+			if (left < index - 1) {
+				quickSort(data, left, index - 1);
+			}
+
+			if (index < right) {
+				quickSort(data, index + 1, right);
+			}
+
+		}
+
+		return data;
+	}
+
+	//creates linkedList
+	function linkedList () {
+		this.list = null;
+		this.size = 0;
+	}
+
+	//adds something to a linkedList
+	linkedList.prototype.add = function (stuff) {
+		var obj = {
+			data: stuff,
+			prev: null,
+			next: null
+		};
+		if (this.list == null) {
+			this.list = obj;
+		} else {
+			var current = this.list;
+			while (current.next) {
+				current = current.next;
+			}
+			obj.prev = current;
+			current.next = obj;
+
+		}
+		this.size++;
+	};
+
+	//find an object in a linkedList from an index
+	linkedList.prototype.item = function (index) {
+		if (index > -1 && index < this.size) {
+			var current = this.list, i = 0;
+			while (i < index) {
+				current = current.next;
+				i++;
+			}
+			return current.data;
+		} else {
+			return null;
+		}
+	};
+
+	//remove an object in a linkedList from an index
+	linkedList.prototype.remove = function (index) {
+		var res;
+		if (index > -1 && index < this.size){
+				var current = this.list, i = 0;
+
+				if (index === 0){
+					this.size = current.next;
+				} else {
+					while(i < index){
+						current = current.next;	
+						i++;
+					}
+					current.prev.next = current.next;
+				}
+			
+				this.size--;
+
+				res = current.data;			
+			} else {
+				res = null;
+			}
+		return res;
+	};
+
+	//create an array out of a linked list
+	linkedList.prototype.toArray = function () {
+		var res =  [], current = this.list;
+
+		while(current) {
+			res.push(current.data);
+			current = current.next;
+		}
+		return res;
+	};
+
+	//a string representation of the array of a linkedList
+	linkedList.prototype.toString = function () {
+		return this.toArray().toString();
+	};
+
 	// expose public members
 	ns.compare = compare;
-	ns.sort = mergeSort;
+	ns.mergeSort = mergeSort;
 	ns.randomArray = randomArray;
-})(window, window.Locker = window.Locker || {version: '1.0 Alpha'});
+	ns.bubbleSort = bubbleSort;
+	ns.quickSort = quickSort;
+	ns.linkedList = linkedList;
+
+	//Take over Locker namespace as well
+	window.Locker = ns;
+})(window, window.locker = window.locker || {});
